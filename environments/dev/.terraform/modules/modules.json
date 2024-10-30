@@ -1,0 +1,1 @@
+{"Modules":[{"Key":"","Source":"","Dir":"."},{"Key":"dev-docker01","Source":"../../modules/proxmox_vm","Dir":"../../modules/proxmox_vm"},{"Key":"dev-pg01","Source":"../../modules/proxmox_vm","Dir":"../../modules/proxmox_vm"},{"Key":"dev-pg02","Source":"../../modules/proxmox_vm","Dir":"../../modules/proxmox_vm"}]}

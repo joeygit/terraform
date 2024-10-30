@@ -30,10 +30,17 @@ provider "proxmox" {
     pm_user = var.PM_USER
     pm_otp = ""
 }
+variable "VAULT_ADDR" {
+  type = string
+}
+
+variable "VAULT_TOKEN" {
+  type = string
+}
 provider "vault" {
   # Vault address and token
-  address = "http://10.1.1.20:8200"  # Adjust this to your Vault server's address
-  token   = "hvs.fTjF0fWnYC2Bu1ZDK8nKJkPg"         # Use a Vault token here, avoid hardcoding tokens in production
+  address = var.VAULT_ADDR  # Adjust this to your Vault server's address
+  token   = var.VAULT_TOKEN         # Use a Vault token here, avoid hardcoding tokens in production
 }
 module "kube-master" {
   source           = "../../modules/proxmox_vm"

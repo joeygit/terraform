@@ -6,12 +6,19 @@ terraform {
     }
   }
 }
+variable "PM_PW" {
+  type = string
+}
+
+variable "PM_USER" {
+  type = string
+}
 provider "proxmox" {
     alias = "node2"
     pm_tls_insecure = true
     pm_api_url = "https://10.1.1.6:8006/api2/json"
-    pm_password = "formterra2024"
-    pm_user = "terraform@pve"
+    pm_password = var.PM_PW
+    pm_user = var.PM_USER
     pm_otp = ""
 }
 
@@ -19,14 +26,21 @@ provider "proxmox" {
     alias = "node1"
     pm_tls_insecure = true
     pm_api_url = "https://10.1.1.5:8006/api2/json"
-    pm_password = "formterra2024"
-    pm_user = "terraform@pve"
+    pm_password = var.PM_PW
+    pm_user = var.PM_USER
     pm_otp = ""
+}
+variable "VAULT_ADDR" {
+  type = string
+}
+
+variable "VAULT_TOKEN" {
+  type = string
 }
 provider "vault" {
   # Vault address and token
-  address = env("VAULT_ADDR")  # Adjust this to your Vault server's address
-  token   = env("VAULT_TOKEN")         # Use a Vault token here, avoid hardcoding tokens in production
+  address = var.VAULT_ADDR  # Adjust this to your Vault server's address
+  token   = var.VAULT_TOKEN         # Use a Vault token here, avoid hardcoding tokens in production
 }
 module "dev-docker01" {
   source           = "../../modules/proxmox_vm"
@@ -58,7 +72,7 @@ module "dev-docker01" {
 module "dev-pg01" {
   source           = "../../modules/proxmox_vm"
   vm_name          = "dev-pg01"
-  vm_description   = "Dev postgresql node 01"
+  vm_description   = "Dev pgsql node 01"
   vm_count         = 1
   target_node      = "pve1"
   template         = "ubuntutemplate"

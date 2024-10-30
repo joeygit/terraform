@@ -4,3 +4,5 @@
 
 # Ignore the .terraform directory which holds provider plugins and other cached information
 .terraform/
+**/.terraform
+.env

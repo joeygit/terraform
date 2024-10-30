@@ -24,6 +24,19 @@ provider "proxmox" {
     pm_user = "terraform@pve"
     pm_otp = ""
 }
+variable "VAULT_ADDR" {
+  type = string
+}
+
+variable "VAULT_TOKEN" {
+  type = string
+}
+provider "vault" {
+  # Vault address and token
+  address = var.VAULT_ADDR  # Adjust this to your Vault server's address
+  token   = var.VAULT_TOKEN         # Use a Vault token here, avoid hardcoding tokens in production
+}
+
 resource "proxmox_vm_qemu" "kube-master" {
     provider = proxmox.node1
     name = "kube-master0${count.index + 1}"
@@ -32,16 +45,10 @@ resource "proxmox_vm_qemu" "kube-master" {
     # Node name has to be the same name as within the cluster
     # this might not include the FQDN
     target_node = "pve2"
-
-    # The destination resource pool for the new VM
-    #pool = "pool0"
-
     # The template name to clone this vm from
     clone = "ubuntutemplate"
-
     # Activate QEMU agent for this VM
     agent = 1
-
     os_type = "cloud-init"
     cores = 4
     sockets = 1
@@ -49,7 +56,6 @@ resource "proxmox_vm_qemu" "kube-master" {
     cpu = "host"
     memory = 4096
     scsihw = "virtio-scsi-single"
-
     # Setup the disk
     disks {
         ide{
@@ -68,23 +74,46 @@ resource "proxmox_vm_qemu" "kube-master" {
             }
         }
     }
-
     # Setup the network interface and assign a vlan tag: 256
     network {
         model = "virtio"
         bridge = "vmbr0"
     }
-
     # Setup the ip address using cloud-init.
     boot = "order=scsi1"
     # Keep in mind to use the CIDR notation for the ip.
     ipconfig0 = "ip=10.1.1.2${count.index + 1}/24,gw=10.1.1.1"
     nameserver = "1.1.1.1"
-    sshkeys = <<EOF
-    ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDKpTAYU3Ucc6x9rRj82RdSc0Yw6/raETjEFz1KZbarqr95k9o8v725UxpOo7HfAXe1k2FYKutCf6pFk3hkmfhct1UHBYnrfXNn51FZNaBpZhyfVYrwaRNI5CmAADz7D3GzkHrSNO8AewWrGrflkpjBmfDBQF0lUMXwUfiH42LU444Jaeek2/KTE9EBmQRYPtEGj1w4cpONJ7MaI7ErQytr8t+dhvgZo2mTPiWIP1AsNiNr8nxgBMBC5XP6UsMntyU4KWJw4bp8xLPvtrsh7Yk2N9HhNwzp+6m61rz2OE+NhhS3n0kukduDnNSs7EgE2hfOKy3/HNwInm/mgbIdzN4/I+GTJB3O2kgKkvy1VWJBdfh29LNleE2uoUqygDp6XpUg+bV/OGpAQZYSwPZPa8rgVrPfdya0bUlHvCixL9qHYoVVfJvv9TIkBF7dyOlwEMcLT6IpvoRVjpfglLjBKhpsC5aiTQZpovR/kofqwXSrleJJowWz9zT45MZ6r6dJn6gTyp92lhrvxfyHHYWZoRQyGSlPfymeN9Xg7Hwb2ImpOn1bFaiuVUYgGtGI8CceSFGPfDDcVzVGs0Z97yFzXTWf6ng+ZgYttBia11T5E/3/a+NiHyb3Ijg6sV2dNVH38BiYbmmsmPY/5d2jVkh6JqddHd1PVu5j5nngHexwryJiTQ== jnielson@ansible
-    EOF
+    sshkeys = local.vm-ssh-key
     ciuser = "jnielson"
 }
+
+/*module "kube-master" {
+  source           = "./modules/proxmox_vm"
+  vm_name          = "kube-master01"
+  vm_description   = "Dev environment VM"
+  vm_count         = 1
+  target_node      = "pve2"
+  template         = "ubuntutemplate"
+  agent            = 1
+  os_type          = "cloud-init"
+  cores            = 4
+  sockets          = 1
+  memory           = 4096
+  scsihw           = "virtio-scsi-single"
+  boot_order       = "order=scsi1"
+  ipconfig0        = "ip=10.1.1.21/24,gw=10.1.1.1"
+  nameserver       = "1.1.1.1"
+  ciuser           = "jnielson"
+  ssh_pub_key      = local.vm-ssh-key
+  storage          = "local-lvm"
+  disk_size        = 35
+  network_model    = "virtio"
+  network_bridge   = "vmbr0"
+  providers = {
+    proxmox = proxmox.node1
+  }
+}*/
 
 resource "proxmox_vm_qemu" "kube-worker" {
     provider = proxmox.node1
@@ -142,9 +171,7 @@ resource "proxmox_vm_qemu" "kube-worker" {
     # Keep in mind to use the CIDR notation for the ip.
     ipconfig0 = "ip=10.1.1.3${count.index + 1}/24,gw=10.1.1.1"
     nameserver = "1.1.1.1"
-    sshkeys = <<EOF
-    ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDKpTAYU3Ucc6x9rRj82RdSc0Yw6/raETjEFz1KZbarqr95k9o8v725UxpOo7HfAXe1k2FYKutCf6pFk3hkmfhct1UHBYnrfXNn51FZNaBpZhyfVYrwaRNI5CmAADz7D3GzkHrSNO8AewWrGrflkpjBmfDBQF0lUMXwUfiH42LU444Jaeek2/KTE9EBmQRYPtEGj1w4cpONJ7MaI7ErQytr8t+dhvgZo2mTPiWIP1AsNiNr8nxgBMBC5XP6UsMntyU4KWJw4bp8xLPvtrsh7Yk2N9HhNwzp+6m61rz2OE+NhhS3n0kukduDnNSs7EgE2hfOKy3/HNwInm/mgbIdzN4/I+GTJB3O2kgKkvy1VWJBdfh29LNleE2uoUqygDp6XpUg+bV/OGpAQZYSwPZPa8rgVrPfdya0bUlHvCixL9qHYoVVfJvv9TIkBF7dyOlwEMcLT6IpvoRVjpfglLjBKhpsC5aiTQZpovR/kofqwXSrleJJowWz9zT45MZ6r6dJn6gTyp92lhrvxfyHHYWZoRQyGSlPfymeN9Xg7Hwb2ImpOn1bFaiuVUYgGtGI8CceSFGPfDDcVzVGs0Z97yFzXTWf6ng+ZgYttBia11T5E/3/a+NiHyb3Ijg6sV2dNVH38BiYbmmsmPY/5d2jVkh6JqddHd1PVu5j5nngHexwryJiTQ== jnielson@ansible
-    EOF
+    sshkeys = local.vm-ssh-key
     ciuser = "jnielson"
 }
 
@@ -204,9 +231,7 @@ resource "proxmox_vm_qemu" "docker-host" {
     # Keep in mind to use the CIDR notation for the ip.
     ipconfig0 = "ip=10.1.1.4${count.index + 1}/24,gw=10.1.1.1"
     nameserver = "8.8.8.8"
-    sshkeys = <<EOF
-    ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDKpTAYU3Ucc6x9rRj82RdSc0Yw6/raETjEFz1KZbarqr95k9o8v725UxpOo7HfAXe1k2FYKutCf6pFk3hkmfhct1UHBYnrfXNn51FZNaBpZhyfVYrwaRNI5CmAADz7D3GzkHrSNO8AewWrGrflkpjBmfDBQF0lUMXwUfiH42LU444Jaeek2/KTE9EBmQRYPtEGj1w4cpONJ7MaI7ErQytr8t+dhvgZo2mTPiWIP1AsNiNr8nxgBMBC5XP6UsMntyU4KWJw4bp8xLPvtrsh7Yk2N9HhNwzp+6m61rz2OE+NhhS3n0kukduDnNSs7EgE2hfOKy3/HNwInm/mgbIdzN4/I+GTJB3O2kgKkvy1VWJBdfh29LNleE2uoUqygDp6XpUg+bV/OGpAQZYSwPZPa8rgVrPfdya0bUlHvCixL9qHYoVVfJvv9TIkBF7dyOlwEMcLT6IpvoRVjpfglLjBKhpsC5aiTQZpovR/kofqwXSrleJJowWz9zT45MZ6r6dJn6gTyp92lhrvxfyHHYWZoRQyGSlPfymeN9Xg7Hwb2ImpOn1bFaiuVUYgGtGI8CceSFGPfDDcVzVGs0Z97yFzXTWf6ng+ZgYttBia11T5E/3/a+NiHyb3Ijg6sV2dNVH38BiYbmmsmPY/5d2jVkh6JqddHd1PVu5j5nngHexwryJiTQ== jnielson@ansible
-    EOF
+    sshkeys = local.vm-ssh-key
     ciuser = "jnielson"
 }
 
@@ -267,9 +292,7 @@ resource "proxmox_vm_qemu" "wordpress" {
     # Keep in mind to use the CIDR notation for the ip.
     ipconfig0 = "ip=10.1.1.36/24,gw=10.1.1.1"
     nameserver = "10.1.1.4"
-    sshkeys = <<EOF
-    ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDKpTAYU3Ucc6x9rRj82RdSc0Yw6/raETjEFz1KZbarqr95k9o8v725UxpOo7HfAXe1k2FYKutCf6pFk3hkmfhct1UHBYnrfXNn51FZNaBpZhyfVYrwaRNI5CmAADz7D3GzkHrSNO8AewWrGrflkpjBmfDBQF0lUMXwUfiH42LU444Jaeek2/KTE9EBmQRYPtEGj1w4cpONJ7MaI7ErQytr8t+dhvgZo2mTPiWIP1AsNiNr8nxgBMBC5XP6UsMntyU4KWJw4bp8xLPvtrsh7Yk2N9HhNwzp+6m61rz2OE+NhhS3n0kukduDnNSs7EgE2hfOKy3/HNwInm/mgbIdzN4/I+GTJB3O2kgKkvy1VWJBdfh29LNleE2uoUqygDp6XpUg+bV/OGpAQZYSwPZPa8rgVrPfdya0bUlHvCixL9qHYoVVfJvv9TIkBF7dyOlwEMcLT6IpvoRVjpfglLjBKhpsC5aiTQZpovR/kofqwXSrleJJowWz9zT45MZ6r6dJn6gTyp92lhrvxfyHHYWZoRQyGSlPfymeN9Xg7Hwb2ImpOn1bFaiuVUYgGtGI8CceSFGPfDDcVzVGs0Z97yFzXTWf6ng+ZgYttBia11T5E/3/a+NiHyb3Ijg6sV2dNVH38BiYbmmsmPY/5d2jVkh6JqddHd1PVu5j5nngHexwryJiTQ== jnielson@ansible
-    EOF
+    sshkeys = local.vm-ssh-key
     ciuser = "jnielson"
 }
 
@@ -329,9 +352,7 @@ resource "proxmox_vm_qemu" "docker-host2" {
     # Keep in mind to use the CIDR notation for the ip.
     ipconfig0 = "ip=10.1.1.3/24,gw=10.1.1.1"
     nameserver = "8.8.8.8"
-    sshkeys = <<EOF
-    ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDKpTAYU3Ucc6x9rRj82RdSc0Yw6/raETjEFz1KZbarqr95k9o8v725UxpOo7HfAXe1k2FYKutCf6pFk3hkmfhct1UHBYnrfXNn51FZNaBpZhyfVYrwaRNI5CmAADz7D3GzkHrSNO8AewWrGrflkpjBmfDBQF0lUMXwUfiH42LU444Jaeek2/KTE9EBmQRYPtEGj1w4cpONJ7MaI7ErQytr8t+dhvgZo2mTPiWIP1AsNiNr8nxgBMBC5XP6UsMntyU4KWJw4bp8xLPvtrsh7Yk2N9HhNwzp+6m61rz2OE+NhhS3n0kukduDnNSs7EgE2hfOKy3/HNwInm/mgbIdzN4/I+GTJB3O2kgKkvy1VWJBdfh29LNleE2uoUqygDp6XpUg+bV/OGpAQZYSwPZPa8rgVrPfdya0bUlHvCixL9qHYoVVfJvv9TIkBF7dyOlwEMcLT6IpvoRVjpfglLjBKhpsC5aiTQZpovR/kofqwXSrleJJowWz9zT45MZ6r6dJn6gTyp92lhrvxfyHHYWZoRQyGSlPfymeN9Xg7Hwb2ImpOn1bFaiuVUYgGtGI8CceSFGPfDDcVzVGs0Z97yFzXTWf6ng+ZgYttBia11T5E/3/a+NiHyb3Ijg6sV2dNVH38BiYbmmsmPY/5d2jVkh6JqddHd1PVu5j5nngHexwryJiTQ== jnielson@ansible
-    EOF
+    sshkeys = local.vm-ssh-key
     ciuser = "jnielson"
 }
 
@@ -391,9 +412,7 @@ resource "proxmox_vm_qemu" "sql-host01" {
     # Keep in mind to use the CIDR notation for the ip.
     ipconfig0 = "ip=10.1.1.71/24,gw=10.1.1.1"
     nameserver = "8.8.8.8"
-    sshkeys = <<EOF
-    ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDKpTAYU3Ucc6x9rRj82RdSc0Yw6/raETjEFz1KZbarqr95k9o8v725UxpOo7HfAXe1k2FYKutCf6pFk3hkmfhct1UHBYnrfXNn51FZNaBpZhyfVYrwaRNI5CmAADz7D3GzkHrSNO8AewWrGrflkpjBmfDBQF0lUMXwUfiH42LU444Jaeek2/KTE9EBmQRYPtEGj1w4cpONJ7MaI7ErQytr8t+dhvgZo2mTPiWIP1AsNiNr8nxgBMBC5XP6UsMntyU4KWJw4bp8xLPvtrsh7Yk2N9HhNwzp+6m61rz2OE+NhhS3n0kukduDnNSs7EgE2hfOKy3/HNwInm/mgbIdzN4/I+GTJB3O2kgKkvy1VWJBdfh29LNleE2uoUqygDp6XpUg+bV/OGpAQZYSwPZPa8rgVrPfdya0bUlHvCixL9qHYoVVfJvv9TIkBF7dyOlwEMcLT6IpvoRVjpfglLjBKhpsC5aiTQZpovR/kofqwXSrleJJowWz9zT45MZ6r6dJn6gTyp92lhrvxfyHHYWZoRQyGSlPfymeN9Xg7Hwb2ImpOn1bFaiuVUYgGtGI8CceSFGPfDDcVzVGs0Z97yFzXTWf6ng+ZgYttBia11T5E/3/a+NiHyb3Ijg6sV2dNVH38BiYbmmsmPY/5d2jVkh6JqddHd1PVu5j5nngHexwryJiTQ== jnielson@ansible
-    EOF
+    sshkeys = local.vm-ssh-key
     ciuser = "jnielson"
 }
 
@@ -453,9 +472,7 @@ resource "proxmox_vm_qemu" "sql-host02" {
     # Keep in mind to use the CIDR notation for the ip.
     ipconfig0 = "ip=10.1.1.72/24,gw=10.1.1.1"
     nameserver = "8.8.8.8"
-    sshkeys = <<EOF
-    ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDKpTAYU3Ucc6x9rRj82RdSc0Yw6/raETjEFz1KZbarqr95k9o8v725UxpOo7HfAXe1k2FYKutCf6pFk3hkmfhct1UHBYnrfXNn51FZNaBpZhyfVYrwaRNI5CmAADz7D3GzkHrSNO8AewWrGrflkpjBmfDBQF0lUMXwUfiH42LU444Jaeek2/KTE9EBmQRYPtEGj1w4cpONJ7MaI7ErQytr8t+dhvgZo2mTPiWIP1AsNiNr8nxgBMBC5XP6UsMntyU4KWJw4bp8xLPvtrsh7Yk2N9HhNwzp+6m61rz2OE+NhhS3n0kukduDnNSs7EgE2hfOKy3/HNwInm/mgbIdzN4/I+GTJB3O2kgKkvy1VWJBdfh29LNleE2uoUqygDp6XpUg+bV/OGpAQZYSwPZPa8rgVrPfdya0bUlHvCixL9qHYoVVfJvv9TIkBF7dyOlwEMcLT6IpvoRVjpfglLjBKhpsC5aiTQZpovR/kofqwXSrleJJowWz9zT45MZ6r6dJn6gTyp92lhrvxfyHHYWZoRQyGSlPfymeN9Xg7Hwb2ImpOn1bFaiuVUYgGtGI8CceSFGPfDDcVzVGs0Z97yFzXTWf6ng+ZgYttBia11T5E/3/a+NiHyb3Ijg6sV2dNVH38BiYbmmsmPY/5d2jVkh6JqddHd1PVu5j5nngHexwryJiTQ== jnielson@ansible
-    EOF
+    sshkeys = local.vm-ssh-key
     ciuser = "jnielson"
 }
 
@@ -515,9 +532,7 @@ resource "proxmox_vm_qemu" "sql-quorum01" {
     # Keep in mind to use the CIDR notation for the ip.
     ipconfig0 = "ip=10.1.1.73/24,gw=10.1.1.1"
     nameserver = "8.8.8.8"
-    sshkeys = <<EOF
-    ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDKpTAYU3Ucc6x9rRj82RdSc0Yw6/raETjEFz1KZbarqr95k9o8v725UxpOo7HfAXe1k2FYKutCf6pFk3hkmfhct1UHBYnrfXNn51FZNaBpZhyfVYrwaRNI5CmAADz7D3GzkHrSNO8AewWrGrflkpjBmfDBQF0lUMXwUfiH42LU444Jaeek2/KTE9EBmQRYPtEGj1w4cpONJ7MaI7ErQytr8t+dhvgZo2mTPiWIP1AsNiNr8nxgBMBC5XP6UsMntyU4KWJw4bp8xLPvtrsh7Yk2N9HhNwzp+6m61rz2OE+NhhS3n0kukduDnNSs7EgE2hfOKy3/HNwInm/mgbIdzN4/I+GTJB3O2kgKkvy1VWJBdfh29LNleE2uoUqygDp6XpUg+bV/OGpAQZYSwPZPa8rgVrPfdya0bUlHvCixL9qHYoVVfJvv9TIkBF7dyOlwEMcLT6IpvoRVjpfglLjBKhpsC5aiTQZpovR/kofqwXSrleJJowWz9zT45MZ6r6dJn6gTyp92lhrvxfyHHYWZoRQyGSlPfymeN9Xg7Hwb2ImpOn1bFaiuVUYgGtGI8CceSFGPfDDcVzVGs0Z97yFzXTWf6ng+ZgYttBia11T5E/3/a+NiHyb3Ijg6sV2dNVH38BiYbmmsmPY/5d2jVkh6JqddHd1PVu5j5nngHexwryJiTQ== jnielson@ansible
-    EOF
+    sshkeys = local.vm-ssh-key
     ciuser = "jnielson"
 }
 
@@ -577,8 +592,6 @@ resource "proxmox_vm_qemu" "sql-watch01" {
     # Keep in mind to use the CIDR notation for the ip.
     ipconfig0 = "ip=10.1.1.73/24,gw=10.1.1.1"
     nameserver = "8.8.8.8"
-    sshkeys = <<EOF
-    ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDKpTAYU3Ucc6x9rRj82RdSc0Yw6/raETjEFz1KZbarqr95k9o8v725UxpOo7HfAXe1k2FYKutCf6pFk3hkmfhct1UHBYnrfXNn51FZNaBpZhyfVYrwaRNI5CmAADz7D3GzkHrSNO8AewWrGrflkpjBmfDBQF0lUMXwUfiH42LU444Jaeek2/KTE9EBmQRYPtEGj1w4cpONJ7MaI7ErQytr8t+dhvgZo2mTPiWIP1AsNiNr8nxgBMBC5XP6UsMntyU4KWJw4bp8xLPvtrsh7Yk2N9HhNwzp+6m61rz2OE+NhhS3n0kukduDnNSs7EgE2hfOKy3/HNwInm/mgbIdzN4/I+GTJB3O2kgKkvy1VWJBdfh29LNleE2uoUqygDp6XpUg+bV/OGpAQZYSwPZPa8rgVrPfdya0bUlHvCixL9qHYoVVfJvv9TIkBF7dyOlwEMcLT6IpvoRVjpfglLjBKhpsC5aiTQZpovR/kofqwXSrleJJowWz9zT45MZ6r6dJn6gTyp92lhrvxfyHHYWZoRQyGSlPfymeN9Xg7Hwb2ImpOn1bFaiuVUYgGtGI8CceSFGPfDDcVzVGs0Z97yFzXTWf6ng+ZgYttBia11T5E/3/a+NiHyb3Ijg6sV2dNVH38BiYbmmsmPY/5d2jVkh6JqddHd1PVu5j5nngHexwryJiTQ== jnielson@ansible
-    EOF
+    sshkeys = local.vm-ssh-key
     ciuser = "jnielson"
 }
